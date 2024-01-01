@@ -22,7 +22,7 @@ struct ZurichCityEventAgendaCrawler: AsyncScheduledJob {
 				throw Abort(.notFound)
 			}
 			items.forEach { item in
-				guard let event = DataTransformer.Event.transform(item) else {
+                guard let event = DataTransformer.Event.transform(item, scale: .low) else {
 					context.logger.log(level: .error, "Could not build Event.")
 					return
 				}
