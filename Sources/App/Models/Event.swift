@@ -13,7 +13,7 @@ final class Event: Model, Content {
 	// Name of the table or collection.
 	static let schema = "events"
 
-	// Unique identifier for this Galaxy.
+	// Unique identifier for this Event.
 	@ID(key: .id)
 	var id: UUID?
 
@@ -31,47 +31,59 @@ final class Event: Model, Content {
 
 	/// The Event's location.
 	@Field(key: "location")
-	var location: String
+	var location: String?
 
 	/// The Event's link.
 	@Field(key: "link")
-	var link: URL
-	
+	var link: String
+    
 	/// Scale of the Event.
-	@Field(key: "scale")
+	@Enum(key: "scale_type")
 	var scale: Scale
 
 	/// Creates a new, empty Event.
 	init() { }
 
 	/// Creates a new Event with all properties set.
-	init(id: UUID? = nil, title: String, date: Date, description: String, location: String, link: URL) {
+    init(id: UUID? = nil,
+         title: String,
+         date: Date,
+         description: String,
+         location: String?,
+         link: String,
+         scale: Scale) {
 		self.id = id
 		self.title = title
 		self.date = date
 		self.description = description
 		self.location = location
 		self.link = link
+        self.scale = scale
 	}
 }
 
 struct CreateEvent: AsyncMigration {
 	/// Prepares the database for storing Galaxy models.
 	func prepare(on database: Database) async throws {
-		let scaleType = try await database.enum("scale_type").read()
+        let scaleType = try await database.enum("scale_type")
+            .case("high")
+            .case("medium")
+            .case("low")
+            .create()
+        
 		try await database.schema("events")
 			.id()
 			.field("title", .string)
-			.field("date", .date)
+			.field("date", .datetime)
 			.field("description", .string)
 			.field("location", .string)
-			.field("link", .string)
-			.field("scale", scaleType, .required)
+            .field("link", .string)
+            .field("scale_type", scaleType, .required)
 			.create()
 	}
 
 	/// Optionally reverts the changes made in the prepare method.
 	func revert(on database: Database) async throws {
-		try await database.schema("galaxies").delete()
+		try await database.schema("events").delete()
 	}
 }

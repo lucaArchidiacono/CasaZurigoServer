@@ -16,6 +16,7 @@ version: '3.7'
 
 x-shared_environment: &shared_environment
   LOG_LEVEL: ${LOG_LEVEL:-debug}
+  REDIS_HOST: ${REDIS_HOST}
   DATABASE_HOST: ${DATABASE_HOST}
   DATABASE_NAME: ${DATABASE_NAME}
   DATABASE_USERNAME: ${DATABASE_USERNAME}
@@ -34,6 +35,8 @@ services:
     command: ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]
     depends_on:
       - db
+      - redis
+
   db:
     image: postgres
     ports:
@@ -44,6 +47,11 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      
+  redis:
+    image: "redis:latest"
+    ports:
+      - "6379:6379"
 
 volumes:
   postgres_data:
