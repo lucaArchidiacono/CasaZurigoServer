@@ -1,6 +1,7 @@
 import Vapor
 import Fluent
 import FluentPostgresDriver
+import QueuesRedisDriver
 
 // configures your application
 public func configure(_ app: Application) async throws {
@@ -37,16 +38,32 @@ DATABASE_NAME: \(Environment.get("DATABASE_NAME") ?? "n.a")
 	// Add DB Models in here:
 	app.migrations.add(CreateEvent())
 
+    try await app.autoMigrate()
+    
+    // Setup Queues
+    guard let hostname = Environment.get("REDIS_HOST") else {
+                app.logger.log(level: .critical, """
+Was not able to read environment variables:
+REDIS_HOST: \(Environment.get("REDIS_HOST") ?? "n.a")
+""")
+        throw Abort(.internalServerError)
+    }
+    
+    try app.queues.use(.redis(url: "redis://\(hostname):6379"))
+    
 	// Add Jobs
 	// Highlights - Big Events which are organised on a yearly basis.
 	app.queues.schedule(ZurichEventHighlightCrawlerJob())
 		.monthly()
-		.on(.first)
-		.at(.noon)
+        .on(.first)
+        .at(.noon)
 	app.queues.schedule(ZurichCityEventAgendaCrawler())
 		.daily()
 		.at(.midnight)
-
+    
+    try app.queues.startInProcessJobs(on: .default)
+    try app.queues.startScheduledJobs()
+    
     // register routes
     try routes(app)
 }

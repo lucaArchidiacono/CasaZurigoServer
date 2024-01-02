@@ -31,7 +31,7 @@ final class Event: Model, Content {
 
 	/// The Event's location.
 	@Field(key: "location")
-	var location: String
+	var location: String?
 
 	/// The Event's link.
 	@Field(key: "link")
@@ -45,7 +45,13 @@ final class Event: Model, Content {
 	init() { }
 
 	/// Creates a new Event with all properties set.
-    init(id: UUID? = nil, title: String, date: Date, description: String, location: String, link: String, scale: Scale) {
+    init(id: UUID? = nil,
+         title: String,
+         date: Date,
+         description: String,
+         location: String?,
+         link: String,
+         scale: Scale) {
 		self.id = id
 		self.title = title
 		self.date = date
@@ -59,6 +65,12 @@ final class Event: Model, Content {
 struct CreateEvent: AsyncMigration {
 	/// Prepares the database for storing Galaxy models.
 	func prepare(on database: Database) async throws {
+        let scaleType = try await database.enum("scale_type")
+            .case("high")
+            .case("medium")
+            .case("low")
+            .create()
+        
 		try await database.schema("events")
 			.id()
 			.field("title", .string)
@@ -66,7 +78,7 @@ struct CreateEvent: AsyncMigration {
 			.field("description", .string)
 			.field("location", .string)
             .field("link", .string)
-            .field("scale_type", .enum(.init(name: "scale_type", cases: ["high", "medium", "low"])), .required)
+            .field("scale_type", scaleType, .required)
 			.create()
 	}
 

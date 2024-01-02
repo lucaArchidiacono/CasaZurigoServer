@@ -21,6 +21,6 @@ extension DataTransformer.Event {
               let link = URL(string: item.link ?? "")?.absoluteString else {
 			return nil
 		}
-        return Event(title: title, date: date, description: description, location: "", link: link, scale: scale)
+        return Event(title: title, date: date, description: description, location: nil, link: link, scale: scale)
 	}
 }
