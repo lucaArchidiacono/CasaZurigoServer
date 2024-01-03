@@ -31,15 +31,19 @@ final class Event: Model, Content {
 
 	/// The Event's location.
 	@Field(key: "location")
-	var location: String?
+	var location: String
 
 	/// The Event's link.
 	@Field(key: "link")
 	var link: String
     
 	/// Scale of the Event.
-	@Enum(key: "scale_type")
-	var scale: Scale
+	@Enum(key: .string(ScaleType.name))
+	var scaleType: ScaleType
+
+	/// The Event's Thumbnail
+	@Field(key: "thumbnail")
+	var thumbnail: Data?
 
 	/// Creates a new, empty Event.
 	init() { }
@@ -49,41 +53,18 @@ final class Event: Model, Content {
          title: String,
          date: Date,
          description: String,
-         location: String?,
+         location: String,
          link: String,
-         scale: Scale) {
+         scaleType: ScaleType,
+		 thumbnail: Data?) {
 		self.id = id
 		self.title = title
 		self.date = date
 		self.description = description
 		self.location = location
 		self.link = link
-        self.scale = scale
+        self.scaleType = scaleType
+		self.thumbnail = thumbnail
 	}
 }
 
-struct CreateEvent: AsyncMigration {
-	/// Prepares the database for storing Galaxy models.
-	func prepare(on database: Database) async throws {
-        let scaleType = try await database.enum("scale_type")
-            .case("high")
-            .case("medium")
-            .case("low")
-            .create()
-        
-		try await database.schema("events")
-			.id()
-			.field("title", .string)
-			.field("date", .datetime)
-			.field("description", .string)
-			.field("location", .string)
-            .field("link", .string)
-            .field("scale_type", scaleType, .required)
-			.create()
-	}
-
-	/// Optionally reverts the changes made in the prepare method.
-	func revert(on database: Database) async throws {
-		try await database.schema("events").delete()
-	}
-}

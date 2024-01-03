@@ -36,7 +36,12 @@ DATABASE_NAME: \(Environment.get("DATABASE_NAME") ?? "n.a")
 	app.databases.use(.postgres(configuration: configuration), as: .psql)
 
 	// Add DB Models in here:
+	app.migrations.add(CreateLanguageType())
+	app.migrations.add(CreateCategoryType())
+	app.migrations.add(CreateScaleType())
+	app.migrations.add(CreateRecyclingType())
 	app.migrations.add(CreateEvent())
+	app.migrations.add(CreateWasteCollection())
 
     try await app.autoMigrate()
     
@@ -48,24 +53,42 @@ REDIS_HOST: \(Environment.get("REDIS_HOST") ?? "n.a")
 """)
         throw Abort(.internalServerError)
     }
-    
-    try app.queues.use(.redis(url: "redis://\(hostname):6379"))
-    
+
+	try app.queues.use(.redis(.init(url: "redis://\(hostname):6379", 
+									pool: .init(connectionRetryTimeout: .seconds(60)))))
+
 	// Add Jobs
 	// Highlights - Big Events which are organised on a yearly basis.
-	app.queues.schedule(ZurichEventHighlightCrawlerJob())
-		.monthly()
-        .on(.first)
-        .at(.noon)
-	app.queues.schedule(ZurichCityEventAgendaCrawler())
+	//	let cityYearEventJob = ZurichCityYearEventJob()
+	//	app.queues.schedule(cityYearEventJob)
+	//		.monthly()
+	//        .on(.first)
+	//        .at(.midnight)
+	let cityWeekEventJob = ZurichCityWeekEventJob()
+	app.queues.schedule(cityWeekEventJob)
 		.daily()
 		.at(.midnight)
-    
+	let wasteCollectionJob = WasteCollectionJob()
+	app.queues.schedule(wasteCollectionJob)
+		.yearly()
+		.in(.january)
+		.on(.first)
+		.at(.midnight)
+
     try app.queues.startInProcessJobs(on: .default)
     try app.queues.startScheduledJobs()
-    
+
     // register routes
     try routes(app)
+
+	let context = app.queues.queue.context
+	do {
+//		try await cityYearEventJob.run(context: context)
+		try await cityWeekEventJob.run(context: context)
+		try await wasteCollectionJob.run(context: context)
+	} catch {
+		app.logger.log(level: .error, "\(error)")
+	}
 }
 
 

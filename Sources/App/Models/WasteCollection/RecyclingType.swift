@@ -1,13 +1,17 @@
 //
-//  Recycling.swift
+//  RecyclingType.swift
 //
 //
 //  Created by Luca Archidiacono on 02.01.2024.
 //
 
 import Foundation
+import Fluent
+import Vapor
 
-enum Recycling: String, Codable {
+enum RecyclingType: String, Codable {
+	static let name = "recycling_type"
+
     case cardboard
     case cargotram
     case etram
@@ -15,3 +19,4 @@ enum Recycling: String, Codable {
     case paper
     case waste
 }
+
