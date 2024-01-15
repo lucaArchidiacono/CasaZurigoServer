@@ -9,6 +9,8 @@ import Foundation
 import Vapor
 import Queues
 import SwiftSoup
+// Instead of using the very hybrid: "https://www.zuerich.com"
+// https://www.guidle.com/en/veranstaltungen#distance=&group=month&mustToHaveTagNodes=317161753&pLayout=view-extended&where=-102036997542687
 
 struct ZurichCityYearEventJob: AsyncScheduledJob {
 	private enum Config {
@@ -19,15 +21,16 @@ struct ZurichCityYearEventJob: AsyncScheduledJob {
 			case fr
 
 			var endpoint: URI {
+				let endpoint = "/#group=month&mustToHaveTagNodes=317161753&pLayout=view-extended&where=-102036997542687"
 				switch self {
 				case .de:
-					return URI(string: "\(Config.host)/\(self.rawValue)/besuchen/event-highlightss")
+					return URI(string: "\(Config.host)/\(self.rawValue)/veranstaltungen\(endpoint)")
 				case .en:
-					return URI(string: "\(Config.host)/\(self.rawValue)/visit/event-highlights")
+					return URI(string: "\(Config.host)/\(self.rawValue)/events\(endpoint)")
 				case .fr:
-					return URI(string: "\(Config.host)/\(self.rawValue)/visite/evenements-marquants")
+					return URI(string: "\(Config.host)/\(self.rawValue)/evenements\(endpoint)")
 				case .it:
-					return URI(string: "\(Config.host)/\(self.rawValue)/visitare/eventi-top")
+					return URI(string: "\(Config.host)/\(self.rawValue)/eventi\(endpoint)")
 				}
 			}
 
@@ -37,38 +40,23 @@ struct ZurichCityYearEventJob: AsyncScheduledJob {
 				case .en:
 					let dateFormatter1 = DateFormatter()
 					dateFormatter1.locale = Locale(identifier: "en_US")
-					dateFormatter1.dateFormat = "MMMM dd – dd, yyyy"
+					dateFormatter1.dateFormat = "dd/MMMM/yyyy   HH:mm"
 					formatters.append(dateFormatter1)
-					let dateFormatter2 = DateFormatter()
-					dateFormatter2.locale = Locale(identifier: "en_US")
-					dateFormatter2.dateFormat = "MMMM dd, yyyy"
-					formatters.append(dateFormatter2)
 				case .de:
 					let dateFormatter1 = DateFormatter()
 					dateFormatter1.locale = Locale(identifier: "de_DE")
-					dateFormatter1.dateFormat = "dd. – dd. MMMM yyyy"
+					dateFormatter1.dateFormat = "dd.MMMM.yyyy   HH:mm"
 					formatters.append(dateFormatter1)
-					let dateFormatter2 = DateFormatter()
-					dateFormatter2.locale = Locale(identifier: "de_DE")
-					dateFormatter2.dateFormat = "dd. MMMM yyyy"
-					formatters.append(dateFormatter2)
 				case .fr:
 					let dateFormatter1 = DateFormatter()
 					dateFormatter1.locale = Locale(identifier: "fr_FR")
-					dateFormatter1.dateFormat = "'Du' dd 'au' dd MMMM yyyy"
+					dateFormatter1.dateFormat = "dd/MMMM/yyyy   HH:mm"
 					formatters.append(dateFormatter1)
-					let dateFormatter2 = DateFormatter()
-					dateFormatter2.locale = Locale(identifier: "fr_FR")
-					dateFormatter2.dateFormat = "dd MMMM yyyy"
-					formatters.append(dateFormatter2)
 				case .it:
 					let dateFormatter1 = DateFormatter()
 					dateFormatter1.locale = Locale(identifier: "it_IT")
-					dateFormatter1.dateFormat = "dd – dd MMMM yyyy"
-					let dateFormatter2 = DateFormatter()
-					dateFormatter2.locale = Locale(identifier: "fr_FR")
-					dateFormatter2.dateFormat = "dd MMMM yyyy"
-					formatters.append(dateFormatter2)
+					dateFormatter1.dateFormat = "dd.MMMM.yyyy   HH:mm "
+					formatters.append(dateFormatter1)
 				}
 
 				for formatter in formatters {
@@ -81,123 +69,120 @@ struct ZurichCityYearEventJob: AsyncScheduledJob {
 			}
 		}
 
-		static let host = "https://www.zuerich.com"
-		static let sectionIDs: Set<String> = [
-			"january",
-			"february",
-			"march",
-			"april",
-			"may",
-			"june",
-			"july",
-			"august",
-			"september",
-			"october",
-			"november",
-			"december",
-		]
+		static let host = "https://www.guidle.com"
 	}
 
 
 	func run(context: QueueContext) async throws {
 		for lang in Config.Lang.allCases {
-			let response = try await context.application.client.get(lang.endpoint)
-
-			guard let body = response.body else {
-				context.logger.log(level: .warning, "Was not able to get Body from:\n\(response)")
+			guard let document = try await getDocument(from: lang.endpoint, context: context) else {
+				context.logger.log(level: .error, "Was not able to get document using:\n\(lang.endpoint)")
 				return
 			}
 
-			let document = try SwiftSoup.parse(String(buffer: body))
-			guard let sections = try getSections(from: document, using: context), !sections.isEmpty() else {
-				context.logger.log(level: .error, "No `sections` where found in:\n\(document)")
+			guard let body = document.body() else {
+				context.logger.log(level: .error, "Was not able to get `body` from:\n\(document)")
 				return
 			}
 
-			let links: [URI] = try sections
-				.filter { Config.sectionIDs.contains($0.id()) }
-				.compactMap { element -> [URI] in
-					return try element.select(".section .teaser")
-						.filter { $0.hasAttr("href") }
-						.compactMap { element in
-							guard let path = try? element.attr("href"), !path.contains("http") else {
-								return nil
-							}
-							return URI(string: "\(Config.host)\(path)")
-						}
+			guard let main = try body.select(".container main").first() else {
+				context.logger.log(level: .error, "Was not able to get `body` from:\n\(body)")
+				return
+			}
+
+			let links = try main.select("section .item-wide a")
+				.compactMap { element in
+					let href = try element.attr("href")
+					return URI(string: "\(Config.host)\(href)")
 				}
-				.reduce([], +)
 
 			for link in links {
-				let response = try await context.application.client.get(link)
-
-				guard let body = response.body else {
-					context.logger.log(level: .warning, "Was not able to get Body from:\n\(response)")
-					continue
+				guard let document = try await getDocument(from: link, context: context) else {
+					context.logger.log(level: .error, "Was not able to get document using:\n\(link)")
+					return
 				}
 
-				let document = try SwiftSoup.parse(String(buffer: body))
-
-				guard let main = try document.getElementsByTag("main").first() else {
-					context.logger.log(level: .warning, "Was not able to get `main` from:\n\(document)")
-					continue
+				guard let body = document.body() else {
+					context.logger.log(level: .error, "Was not able to get `body` from:\n\(document)")
+					return
 				}
 
-				let title = try main.select("header .title").text()
-				let subtitle = try main.select("header .subtitle").text()
-
-				guard let content = try main.select(".content").first() else {
-					context.logger.log(level: .warning, "Was not able to get `.content` from:\n\(main)")
-					continue
+				guard let main = try body.select(".container main").first() else {
+					context.logger.log(level: .error, "Was not able to get `body` from:\n\(body)")
+					return
 				}
 
-				let children = content.children()
-				guard let dateString = try children.first()?.text(), let date = lang.buildDate(dateString) else {
-					context.logger.log(level: .warning, "Was not able to get `date` from:\n\(main)")
-					continue
-				}
+				let spans = try main.select("span")
 
-				let description = children.dropFirst()
-					.prefix { child in
-						child.tagName() == "p"
-					}
-					.reduce("") { partialResult, child in
-						let text = (try? child.text()) ?? ""
-						return partialResult.appending("\(text)")
+				let titleSpan = spans
+					.first { element in
+						let attributes = element.getAttributes()
+						return attributes?.contains(where: { $0.getValue() == "summary" }) ?? false
 					}
 
-				var thumbnail: Data?
-				if let thumbnailURL = try? main.getElementsByClass("image-container").first()?.getElementsByTag("img").attr("src"),
-				   let response = try? await context.application.client.get(URI("\(Config.host)\(thumbnailURL)")),
-				   let buffer = response.body {
-					thumbnail = Data(buffer: buffer, byteTransferStrategy: .copy)
+				guard let titleSpan else {
+					context.logger.log(level: .error, "Was not able to get `summary` from `header span`:\n\(main)")
+					return
 				}
 
+				let title = try titleSpan.text()
+
+				let descriptionSpan = spans
+					.first { element in
+						let attributes = element.getAttributes()
+						return attributes?.contains(where: { $0.getValue() == "description" }) ?? false
+					}
+
+				guard let descriptionSpan else {
+					context.logger.log(level: .error, "Was not able to get `description` from `span`:\n\(main)")
+					return
+				}
+
+				let description = try descriptionSpan.text()
+
+				guard let infoElement = try main.select(".info-additional").first() else {
+					context.logger.log(level: .error, "Was not able to get `.info-additional` from:\n\(main)")
+					return
+				}
+
+				let infoAccordions = try infoElement.select(".accordion")
+
+				guard let date = lang.buildDate(try infoAccordions[0].text()) else {
+					return
+				}
+
+				let location = try infoAccordions[1].text()
+				let contact = try infoAccordions[2].text()
+				
+				guard let linkElement = try infoAccordions[3].select("a").first() else {
+					return
+				}
+
+				let link = try linkElement.attr("href")
+				
 				let event = Event(
-					id: UUID(link.string),
+					id: UUID(link),
 					title: title,
-					date: date, 
+					date: date,
 					description: description,
-					location: "",
-					link: link.string,
-					scaleType: .high,
-					thumbnail: thumbnail)
+					location: location,
+					link: link,
+					scaleType: .low,
+					thumbnail: nil)
 				_ = try await event.save(on: context.application.db)
 			}
 		}
 	}
 
-	private func getSections(from document: Document, using context: QueueContext) throws -> Elements? {
-		guard let body = document.body() else {
-			context.logger.log(level: .error, "Was not able to get `body` from:\n\(document)")
+	private func getDocument(from uri: URI, context: QueueContext) async throws -> SwiftSoup.Document? {
+		let response = try await context.application.client.get(uri)
+
+		guard let responseBody = response.body else {
+			context.logger.log(level: .warning, "Was not able to get Body from:\n\(response)")
 			return nil
 		}
 
-		guard let main = try body.getElementsByTag("main").first() else {
-			context.logger.log(level: .error, "Was not able to get `main` from:\n\(document)")
-			return nil
-		}
-
-		return try main.getElementsByTag("section")
+		let document = try SwiftSoup.parse(String(buffer: responseBody))
+		return document
 	}
 }

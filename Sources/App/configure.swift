@@ -59,11 +59,11 @@ REDIS_HOST: \(Environment.get("REDIS_HOST") ?? "n.a")
 
 	// Add Jobs
 	// Highlights - Big Events which are organised on a yearly basis.
-	//	let cityYearEventJob = ZurichCityYearEventJob()
-	//	app.queues.schedule(cityYearEventJob)
-	//		.monthly()
-	//        .on(.first)
-	//        .at(.midnight)
+	let cityYearEventJob = ZurichCityYearEventJob()
+	app.queues.schedule(cityYearEventJob)
+		.monthly()
+		.on(.first)
+		.at(.midnight)
 	let cityWeekEventJob = ZurichCityWeekEventJob()
 	app.queues.schedule(cityWeekEventJob)
 		.daily()
@@ -83,7 +83,7 @@ REDIS_HOST: \(Environment.get("REDIS_HOST") ?? "n.a")
 
 	let context = app.queues.queue.context
 	do {
-//		try await cityYearEventJob.run(context: context)
+		try await cityYearEventJob.run(context: context)
 		try await cityWeekEventJob.run(context: context)
 		try await wasteCollectionJob.run(context: context)
 	} catch {
